@@ -10,10 +10,12 @@
 import { DurableObject } from "cloudflare:workers";
 import {
   apiBase,
+  company as companyLookup,
   faRequest,
   refreshTokens,
   writableEndpointOf,
   WRITE_ENDPOINTS,
+  type CompanyInfo,
   type FreeAgentTokens,
 } from "./freeagent";
 
@@ -149,12 +151,25 @@ export class TokenStore extends DurableObject<Env> {
     return { keepAlive: await this.keepAlive() };
   }
 
-  async status(): Promise<{ connected: boolean; expiresInMin?: number; changes: number }> {
+  async status(): Promise<{ connected: boolean; owner?: string; company?: string; companyType?: string; expiresInMin?: number; changes: number }> {
     const t = await this.ctx.storage.get<FreeAgentTokens>("tokens");
+    const owner = await this.ctx.storage.get<string>("owner");
     const seq = (await this.ctx.storage.get<number>("chgSeq")) ?? 0;
-    return t
-      ? { connected: true, expiresInMin: Math.round((t.expiresAt - Date.now()) / 60000), changes: seq }
-      : { connected: false, changes: seq };
+    if (!t) return { connected: false, owner, changes: seq };
+    let company: CompanyInfo | undefined;
+    try {
+      company = await companyLookup(this.base(), await this.getValidToken());
+    } catch {
+      // non-fatal — status still reports connectivity
+    }
+    return {
+      connected: true,
+      owner,
+      company: company?.name,
+      companyType: company?.type,
+      expiresInMin: Math.round((t.expiresAt - Date.now()) / 60000),
+      changes: seq,
+    };
   }
 
   // ── journalled writes ────────────────────────────────────────────────

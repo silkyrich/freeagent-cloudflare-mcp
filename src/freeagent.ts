@@ -196,6 +196,23 @@ export async function companyName(base: string, token: string): Promise<string> 
   return r.company?.name ?? "FreeAgent";
 }
 
+export interface CompanyInfo {
+  name: string;
+  type?: string; // e.g. "UkSoleTrader", "UkUnincorporatedLandlord", "UkLimitedCompany"
+}
+
+export async function company(base: string, token: string): Promise<CompanyInfo> {
+  const r = await faRequest<{ company: { name?: string; type?: string } }>(base, token, "GET", "/company");
+  return { name: r.company?.name ?? "FreeAgent", type: r.company?.type };
+}
+
+/** Landlord companies (UkUnincorporatedLandlord) model each rental as a native
+ *  Property (/v2/properties) and require `property` on invoices — unlike other
+ *  company types, which use projects. */
+export function isLandlord(type?: string): boolean {
+  return type === "UkUnincorporatedLandlord";
+}
+
 // ── Write whitelist ────────────────────────────────────────────────────────
 // The ONLY endpoints create_record / update_record may touch, with the
 // singular key FreeAgent expects in request bodies. There is no delete tool;
@@ -203,7 +220,8 @@ export async function companyName(base: string, token: string): Promise<string> 
 
 export const WRITE_ENDPOINTS: Record<string, string> = {
   contacts: "contact",
-  projects: "project",
+  properties: "property", // landlord accounts (UkUnincorporatedLandlord)
+  projects: "project", // non-landlord accounts
   invoices: "invoice",
   bills: "bill",
   bank_transaction_explanations: "bank_transaction_explanation",

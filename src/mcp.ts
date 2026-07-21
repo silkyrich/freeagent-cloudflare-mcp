@@ -29,7 +29,13 @@ export class FreeAgentMCP extends McpAgent<Env, State, Props> {
         "FreeAgent books for F J Williams of Hay — Rew (Ruth) Williams's rental-property business,",
         "used by the family (Richard, Rew, Sarah, Jen).",
         "",
-        "Domain model: each rental PROPERTY is a FreeAgent *project* (list_projects = the property list).",
+        "Call get_company FIRST to check the company `type`. It drives the domain model:",
+        "• UkUnincorporatedLandlord (landlord account): each rental is a native PROPERTY —",
+        "  use list_properties; invoices REQUIRE a `property` url (not a project).",
+        "• Other types (e.g. sole trader): rentals are modelled as PROJECTS — use list_projects;",
+        "  invoices link to a `project`. (This company was migrated from sole-trader to landlord,",
+        "  so older data may still be project-shaped while new data is property-shaped.)",
+        "",
         "Only the Hay lets flow through FreeAgent — Tenby holiday lets (Travel Chapter), London",
         "(PayProp/direct) are NOT in these books, so FreeAgent totals are not the whole business.",
         "Accounting category codes live on bank_transaction_explanations, per bank account.",
@@ -116,10 +122,22 @@ export class FreeAgentMCP extends McpAgent<Env, State, Props> {
     );
 
     this.server.registerTool(
+      "list_properties",
+      {
+        description:
+          "List rental PROPERTIES (landlord accounts / UkUnincorporatedLandlord only). Each has an address and a url " +
+          "used as `property` on invoices. Returns empty/errors on non-landlord accounts — use list_projects there.",
+        inputSchema: { max_items: maxItems },
+      },
+      async ({ max_items }) => this.list("properties", {}, max_items),
+    );
+
+    this.server.registerTool(
       "list_projects",
       {
         description:
-          "List projects. NOTE: in this company each rental PROPERTY is modelled as a project — this is effectively the property list.",
+          "List projects. On NON-landlord accounts rentals are modelled as projects, so this is the property list. " +
+          "On a landlord account, rentals are native properties instead — use list_properties.",
         inputSchema: {
           view: z.enum(["active", "completed", "cancelled", "all"]).optional().describe("Default: active."),
           contact: z.string().optional().describe("Filter by contact url."),
@@ -253,8 +271,9 @@ export class FreeAgentMCP extends McpAgent<Env, State, Props> {
           `Create a record in FreeAgent. Writable endpoints: ${Object.keys(WRITE_ENDPOINTS).join(", ")}. ` +
           "Attributes follow the FreeAgent API docs (dev.freeagent.com) — e.g. an invoice needs contact, dated_on, " +
           "payment_terms_in_days, invoice_items; an explanation needs bank_transaction, dated_on, gross_value and " +
-          "category or paid-invoice linkage. Invoices are created as DRAFTS — this tool cannot send or email anything. " +
-          "The change is journalled and reversible via undo_change.",
+          "category or paid-invoice linkage. IMPORTANT for landlord accounts (UkUnincorporatedLandlord): an invoice " +
+          "REQUIRES a `property` url (from list_properties), not a `project`; check get_company if unsure. Invoices are " +
+          "created as DRAFTS — this tool cannot send or email anything. The change is journalled and reversible via undo_change.",
         inputSchema: {
           endpoint: z.enum(Object.keys(WRITE_ENDPOINTS) as [string, ...string[]]),
           attributes: z.record(z.string(), z.unknown()).describe("The record's attributes, per the FreeAgent API docs."),
