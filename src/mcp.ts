@@ -17,10 +17,30 @@ const CONFIRM = z
   .describe("Must be true. ALWAYS show the user exactly what will be written and get their explicit OK first.");
 
 export class FreeAgentMCP extends McpAgent<Env, State, Props> {
-  server = new McpServer({
-    name: "FreeAgent",
-    version: "1.0.0",
-  });
+  server = new McpServer(
+    {
+      name: "FreeAgent",
+      version: "1.0.0",
+    },
+    {
+      // Sent to every MCP client at connect time — domain context the
+      // per-tool descriptions can't carry.
+      instructions: [
+        "FreeAgent books for F J Williams of Hay — Rew (Ruth) Williams's rental-property business,",
+        "used by the family (Richard, Rew, Sarah, Jen).",
+        "",
+        "Domain model: each rental PROPERTY is a FreeAgent *project* (list_projects = the property list).",
+        "Only the Hay lets flow through FreeAgent — Tenby holiday lets (Travel Chapter), London",
+        "(PayProp/direct) are NOT in these books, so FreeAgent totals are not the whole business.",
+        "Accounting category codes live on bank_transaction_explanations, per bank account.",
+        "FreeAgent ids ARE urls — pass them between tools verbatim; get_resource fetches any of them.",
+        "",
+        "Writes: always show the user the exact payload and get their OK before setting confirm=true.",
+        "Every write is journalled and reversible (list_changes / undo_change). Invoices are created",
+        "as drafts only — this connector cannot send or email anything.",
+      ].join("\n"),
+    },
+  );
 
   initialState: State = {};
 
