@@ -1,0 +1,20 @@
+# ─────────────────────────────────────────────────────────────
+#  FreeAgent → Claude connector — secrets
+#  Copy to .dev.vars for `wrangler dev`. For production, push the
+#  same keys with:
+#     npx wrangler secret put FREEAGENT_CLIENT_ID
+#     npx wrangler secret put FREEAGENT_CLIENT_SECRET
+#     npx wrangler secret put COOKIE_ENCRYPTION_KEY
+#  .dev.vars is gitignored — never commit it.
+# ─────────────────────────────────────────────────────────────
+
+# From your dev app at https://dev.freeagent.com (OAuth identifier / secret).
+FREEAGENT_CLIENT_ID=
+FREEAGENT_CLIENT_SECRET=
+
+# Random 32+ char string; signs the OAuth approval cookie and gates /admin.
+# Generate with:  openssl rand -hex 32
+COOKIE_ENCRYPTION_KEY=
+
+# Optional: point at the sandbox while testing (default is production).
+# FREEAGENT_API_BASE=https://api.sandbox.freeagent.com

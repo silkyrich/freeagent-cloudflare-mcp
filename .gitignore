@@ -1,0 +1,14 @@
+# Secrets — never commit
+.env
+.env.*
+*.secret
+*.token.json
+.dev.vars
+
+# Node / Wrangler
+node_modules/
+.wrangler/
+dist/
+
+# OS noise
+.DS_Store

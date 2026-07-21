@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "freeagent-claude-connector",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  // Durable Objects: the MCP agent (one per connected user) and the TokenStore
+  // (single authority for the FreeAgent token chain + the write journal).
+  "durable_objects": {
+    "bindings": [
+      { "name": "MCP_OBJECT", "class_name": "FreeAgentMCP" },
+      { "name": "TOKEN_STORE", "class_name": "TokenStore" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["FreeAgentMCP", "TokenStore"] }
+  ],
+  // Keep-alive: refresh the FreeAgent token chain every 6h so the refresh
+  // token never lapses from inactivity (access tokens live 1h).
+  "triggers": { "crons": ["0 */6 * * *"] },
+  // KV namespace used by @cloudflare/workers-oauth-provider to persist
+  // grants / client registrations / tokens for the connector's own OAuth.
+  // Create it with:  npx wrangler kv namespace create OAUTH_KV
+  "kv_namespaces": [
+    { "binding": "OAUTH_KV", "id": "c044e2a1c2dd4b01b952cd2390950220" }
+  ]
+}
