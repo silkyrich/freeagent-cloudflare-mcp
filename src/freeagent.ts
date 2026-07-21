@@ -223,6 +223,7 @@ export const WRITE_ENDPOINTS: Record<string, string> = {
   properties: "property", // landlord accounts (UkUnincorporatedLandlord)
   projects: "project", // non-landlord accounts
   invoices: "invoice",
+  recurring_invoices: "recurring_invoice", // auto-emailing FORCED off — see TokenStore
   bills: "bill",
   bank_transaction_explanations: "bank_transaction_explanation",
 };

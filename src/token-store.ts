@@ -40,6 +40,31 @@ function normalizeIdentity(identity: string): string {
   return identity.trim().toLowerCase();
 }
 
+/** SAFETY GUARD — recurring invoices can auto-generate invoices AND auto-email
+ *  them to the tenant on a schedule (send_new_invoice_emails / send_reminder_emails
+ *  / send_thank_you_emails, verified against the FreeAgent invoice API). Rew's
+ *  hard rule: nothing reaches a tenant automatically — she generates, reviews and
+ *  forwards by hand. So on EVERY recurring_invoices write (create, update, and the
+ *  undo-restore) these flags are forced false server-side, overriding whatever the
+ *  caller passed. A guard here cannot be forgotten the way a per-call argument can.
+ *  recurring_status is left to the caller (typically "Active" so schedules run). */
+const EMAIL_FLAGS_OFF: Record<string, boolean> = {
+  send_new_invoice_emails: false,
+  send_reminder_emails: false,
+  send_thank_you_emails: false,
+};
+
+function guardWriteAttributes(endpoint: string, attributes: Record<string, unknown>): Record<string, unknown> {
+  if (endpoint !== "recurring_invoices") return attributes;
+  const guarded: Record<string, unknown> = { ...attributes };
+  // Belt: neutralise any caller-supplied send_*_email(s) flag, whatever its name.
+  for (const k of Object.keys(guarded)) {
+    if (/^send_.*_emails?$/i.test(k)) guarded[k] = false;
+  }
+  // Braces: force the three known flags off whether or not they were passed.
+  return { ...guarded, ...EMAIL_FLAGS_OFF };
+}
+
 /** Fields FreeAgent manages itself — stripped before PUT-ing a before-image back. */
 const READONLY_KEYS = new Set(["url", "created_at", "updated_at"]);
 
@@ -196,9 +221,10 @@ export class TokenStore extends DurableObject<Env> {
     if (!singular) {
       throw new Error(`Endpoint "${endpoint}" is not writable. Writable: ${Object.keys(WRITE_ENDPOINTS).join(", ")}`);
     }
+    const guarded = guardWriteAttributes(endpoint, attributes);
     const token = await this.getValidToken();
     const body = await faRequest<Record<string, unknown>>(
-      this.base(), token, "POST", `/${endpoint}`, { [singular]: attributes },
+      this.base(), token, "POST", `/${endpoint}`, { [singular]: guarded },
     );
     const record = (body?.[singular] ?? body) as { url?: string };
     const entry = await this.journal({
@@ -224,7 +250,8 @@ export class TokenStore extends DurableObject<Env> {
     const beforeBody = await faRequest<Record<string, unknown>>(this.base(), token, "GET", url);
     const before = beforeBody?.[singular] ?? beforeBody;
 
-    await faRequest(this.base(), token, "PUT", url, { [singular]: attributes });
+    const guarded = guardWriteAttributes(endpoint, attributes);
+    await faRequest(this.base(), token, "PUT", url, { [singular]: guarded });
     const afterBody = await faRequest<Record<string, unknown>>(this.base(), token, "GET", url);
     const after = afterBody?.[singular] ?? afterBody;
 
@@ -274,9 +301,12 @@ export class TokenStore extends DurableObject<Env> {
       return { ok: true, detail: `Deleted ${entry.url} (reversing ${id}).` };
     }
 
-    // update → restore the before-image (minus server-managed fields)
+    // update → restore the before-image (minus server-managed fields). The
+    // email guard applies here too: even restoring a prior state must not
+    // re-enable tenant auto-emails on a recurring invoice.
     if (!entry.before) return { ok: false, detail: `${id} has no before-image to restore.` };
-    await faRequest(this.base(), token, "PUT", entry.url, { [singular]: writableAttrs(entry.before) });
+    const restore = guardWriteAttributes(entry.endpoint, writableAttrs(entry.before));
+    await faRequest(this.base(), token, "PUT", entry.url, { [singular]: restore });
     entry.undoneAt = new Date().toISOString();
     await this.ctx.storage.put(key, entry);
     return { ok: true, detail: `Restored ${entry.url} to its state before ${id}.` };

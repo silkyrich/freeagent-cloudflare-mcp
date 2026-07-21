@@ -273,7 +273,9 @@ export class FreeAgentMCP extends McpAgent<Env, State, Props> {
           "payment_terms_in_days, invoice_items; an explanation needs bank_transaction, dated_on, gross_value and " +
           "category or paid-invoice linkage. IMPORTANT for landlord accounts (UkUnincorporatedLandlord): an invoice " +
           "REQUIRES a `property` url (from list_properties), not a `project`; check get_company if unsure. Invoices are " +
-          "created as DRAFTS — this tool cannot send or email anything. The change is journalled and reversible via undo_change.",
+          "created as DRAFTS — this tool cannot send or email anything. For recurring_invoices: set frequency (Monthly etc.) " +
+          "and recurring_status='Active' so the schedule runs; the connector FORCES all tenant auto-email flags off, so a " +
+          "schedule never mails a tenant — Rew reviews and forwards manually. The change is journalled and reversible via undo_change.",
         inputSchema: {
           endpoint: z.enum(Object.keys(WRITE_ENDPOINTS) as [string, ...string[]]),
           attributes: z.record(z.string(), z.unknown()).describe("The record's attributes, per the FreeAgent API docs."),
