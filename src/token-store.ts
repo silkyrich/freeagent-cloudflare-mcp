@@ -32,6 +32,12 @@ export interface ChangeEntry {
   undoneAt?: string; // set once reversed
 }
 
+/** Owner identity is compared case-insensitively — FreeAgent does not
+ *  normalise the case of the email it returns from /users/me. */
+function normalizeIdentity(identity: string): string {
+  return identity.trim().toLowerCase();
+}
+
 /** Fields FreeAgent manages itself — stripped before PUT-ing a before-image back. */
 const READONLY_KEYS = new Set(["url", "created_at", "updated_at"]);
 
@@ -49,23 +55,53 @@ export class TokenStore extends DurableObject<Env> {
   }
 
   // ── ownership ────────────────────────────────────────────────────────
-  /** OWNER LOCK: the first FreeAgent user to authorize owns this deployment,
-   *  permanently. Any other identity is rejected BEFORE a grant exists. */
-  async checkOwner(userUrl: string): Promise<{ allowed: boolean; reason?: string }> {
+  /** OWNER LOCK: the first FreeAgent *person* to authorize owns this
+   *  deployment. Identity is the email address, NOT the user url: FreeAgent
+   *  scopes user urls per company, so the same person authorizing a second of
+   *  their own companies arrives as a different url and would be locked out of
+   *  their own connector. Email is stable across a person's companies, so the
+   *  lock still keeps strangers out while letting the owner repoint.
+   *
+   *  Pins written before this change hold a user url. They no longer match any
+   *  email, so the connector stays locked until POST /admin/release-owner —
+   *  deliberately: we cannot prove an old url belongs to the caller, and
+   *  auto-upgrading would open a window for anyone to claim ownership. */
+  async checkOwner(identity: string): Promise<{ allowed: boolean; reason?: string }> {
     const owner = await this.ctx.storage.get<string>("owner");
     if (!owner) return { allowed: true }; // first authorization pins ownership
-    return owner === userUrl
-      ? { allowed: true }
-      : { allowed: false, reason: "This connector is locked to its owner's FreeAgent account." };
+    if (owner === normalizeIdentity(identity)) return { allowed: true };
+    return {
+      allowed: false,
+      reason: owner.startsWith("http")
+        ? "This connector is pinned to an older identity. Run POST /admin/release-owner, then reconnect."
+        : "This connector is locked to its owner's FreeAgent account.",
+    };
   }
 
-  /** Called on OAuth callback — a fresh authorization supersedes any prior chain. */
-  async seed(tokens: FreeAgentTokens, userUrl: string): Promise<void> {
+  /** Release the pin so a different FreeAgent identity can claim this
+   *  deployment. Needed to repoint at another company: FreeAgent user urls are
+   *  per-company, so even the same person authorizing a different company
+   *  arrives as a new identity and is refused. Drops the token chain with it —
+   *  the connector is disconnected until the next authorization re-pins it.
+   *  The write journal is deliberately left intact. */
+  async releaseOwner(): Promise<{ ok: boolean; detail: string }> {
     const owner = await this.ctx.storage.get<string>("owner");
-    if (owner && owner !== userUrl) {
+    await this.ctx.storage.delete("owner");
+    await this.ctx.storage.delete("tokens");
+    return owner
+      ? { ok: true, detail: `Released ${owner}. Reconnect to pin a new owner.` }
+      : { ok: true, detail: "No owner was pinned. Reconnect to pin one." };
+  }
+
+  /** Called on OAuth callback — a fresh authorization supersedes any prior
+   *  chain. Identity is the owner's email (see checkOwner). */
+  async seed(tokens: FreeAgentTokens, identity: string): Promise<void> {
+    const id = normalizeIdentity(identity);
+    const owner = await this.ctx.storage.get<string>("owner");
+    if (owner && owner !== id) {
       throw new Error("Owner lock: refusing to seed tokens for a different FreeAgent user.");
     }
-    if (!owner) await this.ctx.storage.put("owner", userUrl);
+    if (!owner) await this.ctx.storage.put("owner", id);
     await this.ctx.storage.put("tokens", tokens);
   }
 

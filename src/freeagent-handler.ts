@@ -121,8 +121,11 @@ app.get("/callback", async (c) => {
 
   // OWNER LOCK: the first FreeAgent identity to authorize owns this
   // deployment. Anyone else is rejected HERE — before any grant is minted.
+  // Identity is the email, which is stable across the owner's companies —
+  // user urls are per-company and would lock the owner out of their own
+  // connector when repointing it. See TokenStore.checkOwner.
   const store = c.env.TOKEN_STORE.get(c.env.TOKEN_STORE.idFromName("primary")) as unknown as TokenStore;
-  const ownership = await store.checkOwner(user.url);
+  const ownership = await store.checkOwner(user.email);
   if (!ownership.allowed) {
     return c.text(ownership.reason ?? "This connector is locked to its owner.", 403);
   }
@@ -130,7 +133,7 @@ app.get("/callback", async (c) => {
   // Seed the shared TokenStore — a fresh authorization supersedes any prior
   // chain, and makes the store the single authority for refresh.
   try {
-    await store.seed(tokens, user.url);
+    await store.seed(tokens, user.email);
   } catch {
     // non-fatal — first tool call will seed from props as a fallback
   }
@@ -170,6 +173,18 @@ app.get("/admin/status", async (c) => {
   if (auth !== `Bearer ${c.env.COOKIE_ENCRYPTION_KEY}`) return c.text("forbidden", 403);
   const store = c.env.TOKEN_STORE.get(c.env.TOKEN_STORE.idFromName("primary")) as unknown as TokenStore;
   return c.json(await store.status());
+});
+
+// Release the owner pin so this deployment can be claimed afresh — used to
+// repoint at a different FreeAgent company, and to clear pins written before
+// ownership moved from user url to email. Same gate as the other admin routes:
+// only whoever holds the deployment secret can do it, which is the whole point
+// of the lock. Disconnects the connector; the next authorization re-pins it.
+app.post("/admin/release-owner", async (c) => {
+  const auth = c.req.header("Authorization") ?? "";
+  if (auth !== `Bearer ${c.env.COOKIE_ENCRYPTION_KEY}`) return c.text("forbidden", 403);
+  const store = c.env.TOKEN_STORE.get(c.env.TOKEN_STORE.idFromName("primary")) as unknown as TokenStore;
+  return c.json(await store.releaseOwner());
 });
 
 export { app as FreeAgentHandler };
